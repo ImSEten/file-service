@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/file-client",
+    "crates/file-client-console",
     "crates/common",
     "crates/service-protos",
     "crates/file-server",

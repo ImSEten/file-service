@@ -23,6 +23,7 @@ async fn create_client(server_ip: String, port: String) -> Arc<Mutex<GRPCClient>
     ))
 }
 
+// TODO: implement http client
 async fn async_main() {
     let parse_flags = flags::Flags::parse();
     let client = create_client(parse_flags.ip, parse_flags.port.to_string()).await;
