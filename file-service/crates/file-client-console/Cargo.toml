@@ -1,5 +1,5 @@
 [package]
-name = "file-client"
+name = "file-client-console"
 version.workspace = true
 edition.workspace = true
 

@@ -16,27 +16,28 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
-futures = { version = "0.3.31" }
-tokio = { version = "1.40.0" }
-tokio-stream = { version = "0.1.16" }
-tonic = { version = "0.12.3" }
-tower = { version = "0.5.1" }
-tower-http = { version = "0.6.1" }
+futures = { version = "0.3" }
+tokio = { version = "1.40" }
+tokio-stream = { version = "0.1" }
+tonic = { version = "0.13" }
+tower = { version = "0.5" }
+tower-http = { version = "0.6" }
 prost = { version = "0.13" }
 prost-types = { version = "0.13" }
-async-trait = { version = "0.1.83" }
+async-trait = { version = "0.1" }
 serde = { version = "1.0" }
-serde_json = { version = "1.0.133" }
-clap = { version = "4.5.21" }
-thiserror = { version = "2.0.3" }
-log = {version = "0.4.22", features=["kv_unstable"]}
+serde_json = { version = "1.0" }
+clap = { version = "4.5" }
+thiserror = { version = "2.0" }
+log = {version = "0.4", features=["kv_unstable"]}
 env_logger = { version = "0.11" }
-axum = { version = "0.7.9" }
+axum = { version = "0.8" }
 actix-web = { version = "4.0" }
-actix-multipart = { version = "0.7.2" }
+actix-multipart = { version = "0.7" }
 actix-files = { version = "0.6" }
-hyper = { version = "1.5.1" }
-mysql = { version = "25.0.1" }
+hyper = { version = "1.5" }
+mysql = { version = "26.0" }
+tauri = { version = "2.5" }
 
 #[workspace.build-dependencies]
 #tonic-build = { version = "0.12.3" }
