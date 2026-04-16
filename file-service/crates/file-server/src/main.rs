@@ -51,29 +51,29 @@ impl ServerInterface<HttpAxumRequest, HttpAxumResponse> for FileServer {
             .route("/file", get(http_service::file_server::index_axum))
             .route("/file/", get(http_service::file_server::index_axum))
             .route(
-                "/file/*directory",
+                "/file/{*directory}",
                 get(http_service::file_server::index_axum),
             )
             .route(
-                "/download/*directory",
+                "/download/{*directory}",
                 get(http_service::file_server::download_file_axum),
             )
             .route(
-                "/list/*directory",
+                "/list/{*directory}",
                 get(http_service::file_server::list_axum),
             )
             .route(
-                "/upload/*directory",
+                "/upload/{*directory}",
                 post(http_service::file_server::upload_file_axum),
             )
             .layer(DefaultBodyLimit::disable())
             .layer(RequestBodyLimitLayer::new(512 * 1024 * 1024))
             .route(
-                "/merge/*directory",
+                "/merge/{*directory}",
                 post(http_service::file_server::merge_file_axum),
             )
             .route(
-                "/delete/*directory",
+                "/delete/{*directory}",
                 delete(http_service::file_server::delete_file_axum),
             )
             .fallback(http_service::file_server::not_found_axum);

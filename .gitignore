@@ -1,5 +1,7 @@
 /file-service/target
 /file-service/Cargo.lock
+/file-service/vendor
+/file-service/.cargo/
 
 /file-service/.vscode
 /file-service/.idea
