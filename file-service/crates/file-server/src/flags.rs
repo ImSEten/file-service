@@ -31,6 +31,10 @@ pub enum Commands {
         /// server start type
         #[arg(long,default_value = PROTOCOL, help = "server start protocol include 'grpc http_actix http_axum'")]
         protocol: String,
+
+        /// root directory for file service
+        #[arg(long, default_value = "/", help = "root directory for file service")]
+        root_dir: String,
     },
     /// 停止服务
     #[command(name = "stop", about = "Stop the server")]

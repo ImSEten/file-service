@@ -1,15 +1,21 @@
 use actix_web::{web, HttpResponse, Responder};
 use axum::{
     self,
-    extract::{Multipart, Path},
+    extract::{Multipart, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     Json,
 };
 use common::file::FileInfo;
 use serde_json::json;
-use std::{os::unix::fs::MetadataExt, path::PathBuf};
+use std::os::unix::fs::MetadataExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+// 状态结构体，用于共享根目录路径
+#[derive(Clone)]
+pub struct AppState {
+    pub root_dir: String,
+}
 
 static INDEX_AXUM_HTML: &str = include_str!("sources/html/index_axum.html");
 static INDEX_ACTIX_HTML: &str = include_str!("sources/html/index_actix.html");
@@ -82,20 +88,26 @@ pub async fn index_axum() -> impl IntoResponse {
 
 //list file in dir
 pub async fn list_axum(
+    State(state): State<AppState>,
     Path(mut directory): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    log::debug!("list request for directory = {:?}", directory);
+    log::debug!(
+        "list request for directory = {:?} with root_dir = {:?}",
+        directory,
+        state.root_dir
+    );
     if !directory.starts_with("/") {
         directory = format!("/{}", directory);
     }
-    let root_path = std::path::Path::new(&directory);
+    let full_path = std::path::Path::new(&state.root_dir).join(&directory[1..]);
+    log::debug!("full path for listing: {:?}", full_path);
 
     let mut file_list = Vec::<FileInfo>::new();
-    if !root_path.exists() || !root_path.is_dir() {
+    if !full_path.exists() || !full_path.is_dir() {
         return Err((StatusCode::NOT_FOUND, "path not exist".to_string()));
     }
 
-    let mut read_dir = tokio::fs::read_dir(root_path)
+    let mut read_dir = tokio::fs::read_dir(&full_path)
         .await
         .map_err(|e| (StatusCode::OK, e.to_string()))?;
     while let Some(entry) = read_dir
@@ -104,30 +116,42 @@ pub async fn list_axum(
         .map_err(|e| (StatusCode::OK, e.to_string()))?
     {
         let path = entry.path();
-        file_list.push(
-            FileInfo::new(&path)
-                .await
-                .map_err(|e| (StatusCode::OK, e.to_string()))?,
-        );
+        let mut file_info = FileInfo::new(&path)
+            .await
+            .map_err(|e| (StatusCode::OK, e.to_string()))?;
+
+        // 将绝对路径转换为相对于根目录的路径
+        if let Ok(relative_path) = path.strip_prefix(&state.root_dir) {
+            file_info.path = format!("/{}", relative_path.to_string_lossy());
+        }
+
+        file_list.push(file_info);
     }
 
     Ok(Json(file_list))
 }
 
 pub async fn download_file_axum(
+    State(state): State<AppState>,
     Path(mut file_name): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    log::debug!("download_file request for file_name = {:?}", file_name);
+    log::debug!(
+        "download_file request for file_name = {:?} with root_dir = {:?}",
+        file_name,
+        state.root_dir
+    );
     if !file_name.starts_with("/") {
         file_name = format!("/{}", file_name);
     }
-    let file = std::path::Path::new(&file_name);
-    if file.is_dir() {
+    let full_path = std::path::Path::new(&state.root_dir).join(&file_name[1..]);
+    log::debug!("full path for download: {:?}", full_path);
+
+    if full_path.is_dir() {
         return Err((StatusCode::OK, "file if dir, cannot download".to_string()));
     }
     let f = tokio::fs::OpenOptions::new()
         .read(true)
-        .open(file)
+        .open(&full_path)
         .await
         .unwrap();
     let _mode = f
@@ -137,12 +161,14 @@ pub async fn download_file_axum(
         .unwrap()
         .mode();
 
-    let name = file
+    let name = full_path
         .file_name()
         .and_then(|f| f.to_str())
         .unwrap_or("unknown");
     let content_disposition = format!("attachment; filename=\"{}\"", name);
-    let receiver = common::file::read_file_content(file_name).await.unwrap();
+    let receiver = common::file::read_file_content(full_path.to_string_lossy().to_string())
+        .await
+        .unwrap();
     let stream = tokio_stream::wrappers::ReceiverStream::new(receiver);
     match axum::response::Response::builder()
         .status(StatusCode::OK)
@@ -157,24 +183,34 @@ pub async fn download_file_axum(
 
 // TODO: upload_file by block.
 pub async fn upload_file_axum(
+    State(state): State<AppState>,
     Path(mut directory): Path<String>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    log::debug!("upload_file request for directory = {:?}", directory);
+    log::debug!(
+        "upload_file request for directory = {:?} with root_dir = {:?}",
+        directory,
+        state.root_dir
+    );
     // Ensure the directory starts with a slash if not already present
     if !directory.starts_with('/') {
         directory = format!("/{}", directory);
     }
+    // Create the full path by combining root_dir and directory
+    let full_dir_path = std::path::Path::new(&state.root_dir).join(&directory[1..]);
+    log::debug!("full path for upload: {:?}", full_dir_path);
+
     // Create the directory if it doesn't exist
-    let dir_path = PathBuf::from(&directory);
-    if !dir_path.exists() {
-        tokio::fs::create_dir_all(&dir_path).await.map_err(|e| {
-            log::error!("create directory {:?} error {}", dir_path, e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to create directory: {}", e),
-            )
-        })?;
+    if !full_dir_path.exists() {
+        tokio::fs::create_dir_all(&full_dir_path)
+            .await
+            .map_err(|e| {
+                log::error!("create directory {:?} error {}", full_dir_path, e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to create directory: {}", e),
+                )
+            })?;
     }
 
     // TODO: every field is a file, so we need to use tokio::spawn to deal with every file.
@@ -186,18 +222,12 @@ pub async fn upload_file_axum(
         )
     })? {
         let filename = field.file_name().unwrap_or("unknown");
-        let filepath = dir_path.join(filename);
+        let filepath = full_dir_path.join(filename);
         // Check if file already exists and handle accordingly
         if filepath.exists() {
             log::error!("file {:?} exists", filepath);
             return Err((StatusCode::CONFLICT, "File already exists".to_string()));
         }
-        // while let Some(chunk) = field.chunk().await.map_err(|e|
-        //     {
-        //     log::error!("field.chunk error: {}", e);
-        //     (StatusCode::BAD_REQUEST, e.to_string())
-        //     })? {
-        // }
         let data = field.bytes().await.map_err(|e| {
             log::error!("bytes get error: {}", e);
             (
@@ -233,25 +263,31 @@ pub async fn upload_file_axum(
 
 // delete file in dir
 pub async fn delete_file_axum(
+    State(state): State<AppState>,
     Path(mut directory): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    log::debug!("delete request for directory = {:?}", directory);
+    log::debug!(
+        "delete request for directory = {:?} with root_dir = {:?}",
+        directory,
+        state.root_dir
+    );
     if !directory.starts_with("/") {
         directory = format!("/{}", directory);
     }
-    let file_path = std::path::Path::new(&directory);
+    let full_path = std::path::Path::new(&state.root_dir).join(&directory[1..]);
+    log::debug!("full path for delete: {:?}", full_path);
 
-    if !file_path.exists() {
+    if !full_path.exists() {
         return Err((StatusCode::NOT_FOUND, "path not exist".to_string()));
     }
 
-    if file_path.is_dir() {
-        match tokio::fs::remove_dir_all(file_path).await {
+    if full_path.is_dir() {
+        match tokio::fs::remove_dir_all(full_path).await {
             Ok(_) => Ok(Json("delete finished")),
             Err(e) => Err((StatusCode::NOT_FOUND, e.to_string())),
         }
     } else {
-        match tokio::fs::remove_file(file_path).await {
+        match tokio::fs::remove_file(full_path).await {
             Ok(_) => Ok(Json("delete finished")),
             Err(e) => Err((StatusCode::NOT_FOUND, e.to_string())),
         }
@@ -260,21 +296,28 @@ pub async fn delete_file_axum(
 
 //list file in dir
 pub async fn merge_file_axum(
+    State(state): State<AppState>,
     Path(mut directory): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    log::debug!("merge request for directory = {:?}", directory);
+    log::debug!(
+        "merge request for directory = {:?} with root_dir = {:?}",
+        directory,
+        state.root_dir
+    );
     if !directory.starts_with("/") {
         directory = format!("/{}", directory);
     }
-    let parent = common::file::get_file_parent(std::path::Path::new(&directory)).map_err(|e| {
-        log::error!("get_file_parent {} error: {}", &directory, e);
+    let full_path = std::path::Path::new(&state.root_dir).join(&directory[1..]);
+    log::debug!("full path for merge: {:?}", full_path);
+
+    let parent = common::file::get_file_parent(&full_path).map_err(|e| {
+        log::error!("get_file_parent {:?} error: {}", &full_path, e);
         (StatusCode::NOT_FOUND, e.to_string())
     })?;
-    let file_real_name =
-        common::file::get_file_name(std::path::Path::new(&directory)).map_err(|e| {
-            log::error!("get_file_name {} error: {}", &directory, e);
-            (StatusCode::NOT_FOUND, e.to_string())
-        })?;
+    let file_real_name = common::file::get_file_name(&full_path).map_err(|e| {
+        log::error!("get_file_name {:?} error: {}", &full_path, e);
+        (StatusCode::NOT_FOUND, e.to_string())
+    })?;
 
     let mut read_dir = tokio::fs::read_dir(&parent).await.map_err(|e| {
         log::error!("read_dir {} error: {}", parent, e);
@@ -297,10 +340,10 @@ pub async fn merge_file_axum(
     file_list.sort_by_key(|k| k.0);
     let mut f = tokio::fs::OpenOptions::new()
         .append(true)
-        .open(&directory)
+        .open(&full_path)
         .await
         .map_err(|e| {
-            log::error!("open file {} error: {}", directory, e);
+            log::error!("open file {:?} error: {}", full_path, e);
             (StatusCode::NOT_FOUND, e.to_string())
         })?;
     for (_, tmp_file) in file_list {
@@ -318,7 +361,7 @@ pub async fn merge_file_axum(
             (StatusCode::NOT_FOUND, e.to_string())
         })?;
         f.write_all(&buf_tmp).await.map_err(|e| {
-            log::error!("write file {} error: {}", &directory, e);
+            log::error!("write file {:?} error: {}", full_path, e);
             (StatusCode::NOT_FOUND, e.to_string())
         })?;
         tokio::fs::remove_file(std::path::Path::new(&parent).join(&tmp_file))

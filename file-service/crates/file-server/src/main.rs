@@ -21,11 +21,12 @@ use tower_http::limit::RequestBodyLimitLayer;
 pub struct FileServer {
     ip: String,
     port: u16,
+    root_dir: String,
 }
 
 impl FileServer {
-    pub fn new(ip: String, port: u16) -> Self {
-        FileServer { ip, port }
+    pub fn new(ip: String, port: u16, root_dir: String) -> Self {
+        FileServer { ip, port, root_dir }
     }
 }
 
@@ -46,6 +47,12 @@ impl ServerInterface<HttpAxumRequest, HttpAxumResponse> for FileServer {
             .await
             .expect("cannot parse addr");
         info!("Http Server is listening to {}:{}", self.ip, self.port);
+
+        // Create shared state with root directory
+        let state = http_service::file_server::AppState {
+            root_dir: self.root_dir.clone(),
+        };
+
         let app = Router::new()
             .route("/", get(http_service::file_server::index_axum))
             .route("/file", get(http_service::file_server::index_axum))
@@ -76,7 +83,9 @@ impl ServerInterface<HttpAxumRequest, HttpAxumResponse> for FileServer {
                 "/delete/{*directory}",
                 delete(http_service::file_server::delete_file_axum),
             )
-            .fallback(http_service::file_server::not_found_axum);
+            .fallback(http_service::file_server::not_found_axum)
+            .with_state(state); // Add state to the router
+
         // 启动服务
         axum::serve(listener, app.into_make_service())
             .await
@@ -179,8 +188,13 @@ fn main() {
 async fn async_main() {
     let parse_flags = flags::Flags::parse();
     match parse_flags.command {
-        Some(flags::Commands::Start { ip, port, protocol }) => {
-            let file_server = FileServer::new(ip, port);
+        Some(flags::Commands::Start {
+            ip,
+            port,
+            protocol,
+            root_dir,
+        }) => {
+            let file_server = FileServer::new(ip, port, root_dir);
             info!("service starting...");
             //todo ! start server also include http
             //may use --type =http to use http service
