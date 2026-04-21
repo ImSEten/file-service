@@ -138,6 +138,137 @@
             background-color: #0056b3;
         }
 
+        /* 上传进度窗口样式 */
+        .upload-progress-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            min-width: 400px;
+            max-width: 600px;
+        }
+
+        .upload-progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background-color: #2b4057;
+            color: #fff;
+            border-radius: 10px 10px 0 0;
+        }
+
+        .upload-progress-header h3 {
+            margin: 0;
+            font-size: 16px;
+        }
+
+        .close-progress-btn {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .close-progress-btn:hover {
+            color: #ccc;
+        }
+
+        .upload-progress-content {
+            padding: 0;
+        }
+
+        .upload-progress-list {
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .upload-progress-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .upload-progress-item:last-child {
+            border-bottom: none;
+        }
+
+        .upload-file-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+        }
+
+        .upload-file-name {
+            font-weight: bold;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 70%;
+        }
+
+        .upload-file-status {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .upload-progress-bar-container {
+            width: 100%;
+            height: 8px;
+            background-color: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .upload-progress-bar {
+            height: 100%;
+            background-color: #28a745;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .upload-progress-details {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .upload-speed {
+            color: #007bff;
+        }
+
+        .upload-complete {
+            color: #28a745;
+        }
+
+        .upload-error {
+            color: #dc3545;
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+
         .batch-operations {
             display: flex;
             gap: 10px;
@@ -175,6 +306,20 @@
         <div class="batch-operations">
             <button class="batch-btn" id="batchDownloadBtn" disabled>批量下载</button>
             <button class="batch-btn" id="batchDeleteBtn" disabled>批量删除</button>
+        </div>
+    </div>
+
+    <!-- 上传进度窗口 -->
+    <div class="modal-overlay" id="modalOverlay"></div>
+    <div class="upload-progress-modal" id="uploadProgressModal">
+        <div class="upload-progress-header">
+            <h3>上传进度</h3>
+            <button class="close-progress-btn" id="closeProgressBtn">&times;</button>
+        </div>
+        <div class="upload-progress-content">
+            <div class="upload-progress-list" id="uploadProgressList">
+                <!-- 动态生成的上传进度项 -->
+            </div>
         </div>
     </div>
 
@@ -505,47 +650,201 @@
             });
         });
 
-        // 设置每个分块的大小（例如：256MB）
-        const CHUNK_SIZE = 256 * 1024 * 1024;
+        // 设置每个分块的大小（例如：16MB）
+        const CHUNK_SIZE = 16 * 1024 * 1024;
+
+        // 上传进度跟踪
+        const uploadProgressMap = new Map(); // 存储每个文件的上传进度信息
+        let uploadIdCounter = 0; // 上传 ID 计数器
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // 格式化速度
+        function formatSpeed(bytesPerSecond) {
+            if (bytesPerSecond === 0) return '0 B/s';
+            const k = 1024;
+            const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+            const i = Math.floor(Math.log(bytesPerSecond) / Math.log(k));
+            return parseFloat((bytesPerSecond / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // 显示上传进度窗口
+        function showUploadProgressModal() {
+            document.getElementById('modalOverlay').style.display = 'block';
+            document.getElementById('uploadProgressModal').style.display = 'block';
+        }
+
+        // 隐藏上传进度窗口
+        function hideUploadProgressModal() {
+            document.getElementById('modalOverlay').style.display = 'none';
+            document.getElementById('uploadProgressModal').style.display = 'none';
+        }
+
+        // 清空上传进度列表
+        function clearUploadProgressList() {
+            const progressList = document.getElementById('uploadProgressList');
+            progressList.innerHTML = '';
+            uploadProgressMap.clear();
+        }
+
+        // 添加上传进度项到列表
+        function addUploadProgressItem(uploadId, fileName, fileSize) {
+            const progressList = document.getElementById('uploadProgressList');
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'upload-progress-item';
+            itemDiv.id = `upload-item-${uploadId}`;
+            itemDiv.innerHTML = `
+                <div class="upload-file-info">
+                    <span class="upload-file-name" title="${fileName}">${fileName}</span>
+                    <span class="upload-file-status" id="status-${uploadId}">等待中...</span>
+                </div>
+                <div class="upload-progress-bar-container">
+                    <div class="upload-progress-bar" id="progress-bar-${uploadId}" style="width: 0%"></div>
+                </div>
+                <div class="upload-progress-details">
+                    <span id="progress-text-${uploadId}">0%</span>
+                    <span class="upload-speed" id="speed-${uploadId}">-- B/s</span>
+                </div>
+            `;
+            progressList.appendChild(itemDiv);
+            // 滚动到最新项
+            progressList.scrollTop = progressList.scrollHeight;
+        }
+
+        // 更新上传进度
+        function updateUploadProgress(uploadId, uploadedBytes, totalBytes, speed) {
+            const percentage = Math.round((uploadedBytes / totalBytes) * 100);
+            const progressBar = document.getElementById(`progress-bar-${uploadId}`);
+            const progressText = document.getElementById(`progress-text-${uploadId}`);
+            const speedSpan = document.getElementById(`speed-${uploadId}`);
+            
+            if (progressBar) {
+                progressBar.style.width = percentage + '%';
+            }
+            if (progressText) {
+                progressText.textContent = percentage + '%';
+            }
+            if (speedSpan) {
+                speedSpan.textContent = formatSpeed(speed);
+            }
+        }
+
+        // 标记上传完成
+        function markUploadComplete(uploadId) {
+            const statusSpan = document.getElementById(`status-${uploadId}`);
+            const speedSpan = document.getElementById(`speed-${uploadId}`);
+            if (statusSpan) {
+                statusSpan.textContent = '已完成';
+                statusSpan.className = 'upload-file-status upload-complete';
+            }
+            if (speedSpan) {
+                speedSpan.className = 'upload-speed upload-complete';
+            }
+        }
+
+        // 标记上传失败
+        function markUploadError(uploadId, errorMessage) {
+            const statusSpan = document.getElementById(`status-${uploadId}`);
+            const speedSpan = document.getElementById(`speed-${uploadId}`);
+            if (statusSpan) {
+                statusSpan.textContent = '失败';
+                statusSpan.className = 'upload-file-status upload-error';
+            }
+            if (speedSpan) {
+                speedSpan.className = 'upload-speed upload-error';
+            }
+        }
 
         // 获取上传按钮和文件输入元素
         const uploadButton = document.getElementById('uploadButton');
         const fileInput = document.getElementById('fileInput');
+        const closeProgressBtn = document.getElementById('closeProgressBtn');
+
+        // 关闭进度窗口
+        closeProgressBtn.addEventListener('click', hideUploadProgressModal);
+
+        // 点击遮罩层也可以关闭
+        document.getElementById('modalOverlay').addEventListener('click', hideUploadProgressModal);
 
         // 封装后的文件上传函数
         async function uploadFileWithChunks(file, currentPath) {
+            const uploadId = ++uploadIdCounter;
+            const fileNameBase = file.name;
+            const fileSize = file.size;
+            const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
+            
+            // 初始化上传进度信息
+            const uploadInfo = {
+                id: uploadId,
+                name: fileNameBase,
+                size: fileSize,
+                uploadedBytes: 0,
+                startTime: null,
+                lastUpdateTime: null
+            };
+            uploadProgressMap.set(uploadId, uploadInfo);
+            
+            // 显示进度窗口并添加进度项
+            showUploadProgressModal();
+            addUploadProgressItem(uploadId, fileNameBase, fileSize);
+            
             let start = 0;
             let end = CHUNK_SIZE;
             let chunkIndex = 0;
-            console.debug("file.size = ", file.size)
-            const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
-            const fileNameBase = file.name;
             let allChunksUploadedSuccessfully = true;
 
-            while (start < file.size) {
-                console.debug("start = ", start)
+            while (start < fileSize) {
                 const chunk = file.slice(start, end);
                 const formData = new FormData();
                 const fileName = chunkIndex === 0 ? fileNameBase : `${fileNameBase}.${chunkIndex}`;
                 formData.append('file', chunk, fileName);
 
                 try {
+                    const chunkStartTime = Date.now();
+                    
+                    if (!uploadInfo.startTime) {
+                        uploadInfo.startTime = chunkStartTime;
+                    }
+
                     const response = await fetch(`${window.location.origin}/upload${currentPath === '/' ? '//' : currentPath}`, {
                         method: 'POST',
                         body: formData,
                     });
 
+                    const chunkEndTime = Date.now();
+                    const chunkUploadTime = (chunkEndTime - chunkStartTime) / 1000; // 秒
+                    
                     if (!response.ok) {
                         console.error('response error:', response);
                         throw new Error('上传分块失败');
                     } else {
                         console.log(`分块 ${chunkIndex}/${totalChunks} 上传成功`);
+                        
+                        // 更新已上传字节数
+                        uploadInfo.uploadedBytes += chunk.size;
+                        uploadInfo.lastUpdateTime = chunkEndTime;
+                        
+                        // 计算速度
+                        const elapsedTime = (chunkEndTime - uploadInfo.startTime) / 1000; // 秒
+                        const speed = elapsedTime > 0 ? uploadInfo.uploadedBytes / elapsedTime : 0;
+                        
+                        // 更新进度显示
+                        updateUploadProgress(uploadId, uploadInfo.uploadedBytes, fileSize, speed);
+                        
                         await sendMergeRequest(fileNameBase, currentPath, chunkIndex);
                     }
                 } catch (error) {
                     console.error('上传过程中发生错误:', error);
-                    alert('文件上传过程中发生错误，请检查控制台日志。');
-                    return;
+                    markUploadError(uploadId, error.message);
+                    allChunksUploadedSuccessfully = false;
+                    break;
                 }
 
                 chunkIndex++;
@@ -553,8 +852,10 @@
                 end = start + CHUNK_SIZE;
             }
 
-            alert('文件所有分块上传和合并成功！');
-            fetchAndDisplayDirectory(currentPath);
+            if (allChunksUploadedSuccessfully) {
+                markUploadComplete(uploadId);
+                fetchAndDisplayDirectory(currentPath);
+            }
         }
 
         // 发送合并请求的辅助函数
@@ -584,6 +885,9 @@
         fileInput.addEventListener('change', (event) => {
             const files = event.target.files;
             if (files.length > 0) {
+                // 清空之前的上传进度，只显示当前批次的文件
+                clearUploadProgressList();
+                
                 const currentPath = window.location.pathname.replace('/file', '') || '/';
                 for (let file of files) {
                     uploadFileWithChunks(file, currentPath);

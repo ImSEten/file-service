@@ -99,7 +99,9 @@ pub async fn list_axum(
     if !directory.starts_with("/") {
         directory = format!("/{}", directory);
     }
-    let full_path = std::path::Path::new(&state.root_dir).join(&directory[1..]);
+    // FIX: Remove all leading slashes from directory before joining to avoid absolute path issues
+    let dir_trimmed = directory.trim_start_matches('/');
+    let full_path = std::path::Path::new(&state.root_dir).join(dir_trimmed);
     log::debug!("full path for listing: {:?}", full_path);
 
     let mut file_list = Vec::<FileInfo>::new();
@@ -143,7 +145,9 @@ pub async fn download_file_axum(
     if !file_name.starts_with("/") {
         file_name = format!("/{}", file_name);
     }
-    let full_path = std::path::Path::new(&state.root_dir).join(&file_name[1..]);
+    // FIX: Remove all leading slashes from file_name before joining to avoid absolute path issues
+    let file_trimmed = file_name.trim_start_matches('/');
+    let full_path = std::path::Path::new(&state.root_dir).join(file_trimmed);
     log::debug!("full path for download: {:?}", full_path);
 
     if full_path.is_dir() {
@@ -196,8 +200,10 @@ pub async fn upload_file_axum(
     if !directory.starts_with('/') {
         directory = format!("/{}", directory);
     }
+    // FIX: Remove all leading slashes from directory before joining to avoid absolute path issues
+    let dir_trimmed = directory.trim_start_matches('/');
     // Create the full path by combining root_dir and directory
-    let full_dir_path = std::path::Path::new(&state.root_dir).join(&directory[1..]);
+    let full_dir_path = std::path::Path::new(&state.root_dir).join(dir_trimmed);
     log::debug!("full path for upload: {:?}", full_dir_path);
 
     // Create the directory if it doesn't exist
@@ -274,7 +280,9 @@ pub async fn delete_file_axum(
     if !directory.starts_with("/") {
         directory = format!("/{}", directory);
     }
-    let full_path = std::path::Path::new(&state.root_dir).join(&directory[1..]);
+    // FIX: Remove all leading slashes from directory before joining to avoid absolute path issues
+    let dir_trimmed = directory.trim_start_matches('/');
+    let full_path = std::path::Path::new(&state.root_dir).join(dir_trimmed);
     log::debug!("full path for delete: {:?}", full_path);
 
     if !full_path.exists() {
@@ -307,7 +315,9 @@ pub async fn merge_file_axum(
     if !directory.starts_with("/") {
         directory = format!("/{}", directory);
     }
-    let full_path = std::path::Path::new(&state.root_dir).join(&directory[1..]);
+    // FIX: Remove all leading slashes from directory before joining to avoid absolute path issues
+    let dir_trimmed = directory.trim_start_matches('/');
+    let full_path = std::path::Path::new(&state.root_dir).join(dir_trimmed);
     log::debug!("full path for merge: {:?}", full_path);
 
     let parent = common::file::get_file_parent(&full_path).map_err(|e| {
