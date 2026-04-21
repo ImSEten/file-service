@@ -1241,6 +1241,16 @@
             fetchAndDisplayDirectory(currentPath);
         });
 
+        // ========== 监听浏览器刷新/关闭事件 ==========
+        window.addEventListener('beforeunload', (e) => {
+            if (hasUploadingFiles()) {
+                // 阻止默认行为并显示确认对话框
+                e.preventDefault();
+                e.returnValue = '有文件正在上传，刷新或关闭页面将中断上传。确定要继续吗？';
+                return e.returnValue;
+            }
+        });
+
         // ========== 新建文件夹功能 ==========
         let newFolderOverlay = document.getElementById('newFolderOverlay');
         let newFolderDialog = document.getElementById('newFolderDialog');
