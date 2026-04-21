@@ -175,17 +175,20 @@
 
         /* 上传进度窗口样式 */
         .upload-progress-modal {
-            display: none;
+            display: block;
             position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
             background-color: #fff;
             border-radius: 10px;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
             z-index: 1000;
             min-width: 400px;
             max-width: 600px;
+            cursor: move;
+        }
+        
+        /* 窗口激活状态（点击时置顶） */
+        .upload-progress-modal.active {
+            z-index: 1001;
         }
 
         .upload-progress-header {
@@ -225,13 +228,21 @@
 
         /* 最小化状态样式 */
         .upload-progress-modal.minimized {
-            top: auto !important;
-            left: auto !important;
             bottom: 20px;
-            right: 20px;
             transform: none !important;
             min-width: 250px;
             max-width: 300px;
+        }
+        
+        /* 第一个窗口最小化时在右下角 */
+        .upload-progress-modal.minimized.first-window {
+            right: 20px;
+        }
+        
+        /* 其他窗口最小化时位置错开 */
+        .upload-progress-modal.minimized:not(.first-window) {
+            right: calc(20px + (var(--window-index, 0) * 10px));
+            bottom: calc(20px + (var(--window-index, 0) * 10px));
         }
 
         .upload-progress-modal.minimized .upload-progress-header {
@@ -295,6 +306,16 @@
 
         .upload-progress-modal:not(.minimized) .upload-progress-header h3.minimized-title {
             display: none;
+        }
+        
+        /* 拖动时的样式 */
+        .upload-progress-modal.dragging {
+            opacity: 0.9;
+            cursor: grabbing;
+        }
+        
+        .upload-progress-modal.dragging .upload-progress-header {
+            cursor: grabbing;
         }
 
         .upload-progress-content {
@@ -545,23 +566,6 @@
         </div>
     </div>
 
-    <!-- 上传进度窗口 -->
-    <div class="modal-overlay" id="modalOverlay"></div>
-    <div class="upload-progress-modal" id="uploadProgressModal">
-        <div class="upload-progress-header">
-            <h3 class="normal-title">上传进度</h3>
-            <h3 class="minimized-title" id="minimizedTitle">上传中...</h3>
-            <div class="header-buttons">
-                <button class="minimize-progress-btn" id="minimizeProgressBtn" title="最小化">−</button>
-                <button class="close-progress-btn" id="closeProgressBtn" title="关闭">×</button>
-            </div>
-        </div>
-        <div class="upload-progress-content">
-            <div class="upload-progress-list" id="uploadProgressList">
-                <!-- 动态生成的上传进度项 -->
-            </div>
-        </div>
-    </div>
 
     <!-- 文件列表表格 -->
     <div class="table-container" id="data-table">
@@ -914,9 +918,11 @@
         // 设置每个分块的大小（例如：16MB）
         const CHUNK_SIZE = 16 * 1024 * 1024;
 
-        // 上传进度跟踪
+        // 上传进度跟踪 - 支持多个窗口
         const uploadProgressMap = new Map(); // 存储每个文件的上传进度信息
         let uploadIdCounter = 0; // 上传 ID 计数器
+        let windowCounter = 0; // 窗口计数器
+        const activeWindows = new Map(); // 存储所有活动的上传窗口
 
         // 格式化文件大小
         function formatFileSize(bytes) {
@@ -936,77 +942,265 @@
             return parseFloat((bytesPerSecond / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
-        // 显示上传进度窗口（非模态模式，允许用户继续操作）
-        function showUploadProgressModal() {
-            document.getElementById('uploadProgressModal').style.display = 'block';
-            // 不显示遮罩层，允许用户继续操作页面
-        }
-
-        // 隐藏上传进度窗口
-        function hideUploadProgressModal() {
-            document.getElementById('modalOverlay').style.display = 'none';
-            document.getElementById('uploadProgressModal').style.display = 'none';
-        }
-
-        // 检查是否有文件正在上传
-        function hasUploadingFiles() {
-            for (const [uploadId, uploadInfo] of uploadProgressMap.entries()) {
-                const statusSpan = document.getElementById(`status-${uploadId}`);
-                if (statusSpan && !statusSpan.textContent.includes('已完成') && !statusSpan.textContent.includes('失败')) {
-                    return true;
+        // 重新计算所有窗口的位置
+        function recalculateWindowPositions() {
+            // 获取所有非最小化的窗口
+            const normalWindows = [];
+            for (const [wid, wData] of activeWindows.entries()) {
+                if (!wData.isMinimized) {
+                    normalWindows.push({ windowId: wid, modal: wData.modal });
                 }
             }
-            return false;
+            
+            // 按 windowId 排序，确保顺序一致
+            normalWindows.sort((a, b) => a.windowId - b.windowId);
+            
+            // 重新设置位置
+            normalWindows.forEach((item, index) => {
+                const offset = index * 30;
+                const modal = item.modal;
+                
+                // 如果已经被拖动过，不改变位置
+                if (!modal.dataset.hasBeenDragged || modal.dataset.hasBeenDragged === 'false') {
+                    modal.style.top = `calc(50% + ${offset}px)`;
+                    modal.style.left = `calc(50% + ${offset}px)`;
+                    modal.style.transform = 'translate(-50%, -50%)';
+                }
+            });
+        }
+        
+        // 创建新的上传进度窗口
+        function createUploadProgressWindow() {
+            const windowId = ++windowCounter;
+            const modal = document.createElement('div');
+            modal.className = 'upload-progress-modal';
+            modal.id = `uploadProgressModal-${windowId}`;
+            modal.dataset.windowIndex = windowId;
+            modal.dataset.hasBeenDragged = 'false'; // 标记是否被拖动过
+            
+            // 计算偏移位置，使每个窗口位置不重复
+            const offset = (windowCounter - 1) * 30;
+            modal.style.top = `calc(50% + ${offset}px)`;
+            modal.style.left = `calc(50% + ${offset}px)`;
+            modal.style.transform = 'translate(-50%, -50%)';
+            
+            modal.innerHTML = `
+                <div class="upload-progress-header">
+                    <h3 class="normal-title">上传进度 #${windowId}</h3>
+                    <h3 class="minimized-title" id="minimizedTitle-${windowId}">上传中...</h3>
+                    <div class="header-buttons">
+                        <button class="minimize-progress-btn" id="minimizeProgressBtn-${windowId}" title="最小化">−</button>
+                        <button class="close-progress-btn" id="closeProgressBtn-${windowId}" title="">×</button>
+                    </div>
+                </div>
+                <div class="upload-progress-content">
+                    <div class="upload-progress-list" id="uploadProgressList-${windowId}">
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            activeWindows.set(windowId, {
+                modal: modal,
+                isMinimized: false,
+                uploadIds: new Set(),
+                fileProgressMap: new Map()
+            });
+            
+            // 绑定事件
+            setupWindowEvents(windowId);
+            
+            return windowId;
         }
 
-        // 获取正在上传的文件数量
-        function getUploadingCount() {
-            let count = 0;
-            for (const [uploadId, uploadInfo] of uploadProgressMap.entries()) {
+        // 设置窗口事件（拖动、最小化、关闭）
+        function setupWindowEvents(windowId) {
+            const windowData = activeWindows.get(windowId);
+            if (!windowData) return;
+            
+            const modal = windowData.modal;
+            const header = modal.querySelector('.upload-progress-header');
+            const closeBtn = document.getElementById(`closeProgressBtn-${windowId}`);
+            const minimizeBtn = document.getElementById(`minimizeProgressBtn-${windowId}`);
+            
+            // 拖动功能
+            let isDragging = false;
+            let startX, startY, initialLeft, initialTop;
+            
+            // 点击窗口时置顶
+            modal.addEventListener('mousedown', () => {
+                // 将所有窗口 z-index 设为基础值
+                let baseZ = 1000;
+                document.querySelectorAll('.upload-progress-modal').forEach(m => {
+                    m.style.zIndex = baseZ++;
+                });
+                // 当前窗口设为最高
+                modal.style.zIndex = baseZ;
+            });
+            
+            header.addEventListener('mousedown', (e) => {
+                if (e.target.closest('.header-buttons')) return; // 点击按钮区域不触发拖动
+                
+                isDragging = true;
+                modal.classList.add('dragging');
+                modal.dataset.hasBeenDragged = 'true'; // 标记为已拖动
+                
+                startX = e.clientX;
+                startY = e.clientY;
+                
+                const rect = modal.getBoundingClientRect();
+                initialLeft = rect.left;
+                initialTop = rect.top;
+                
+                // 移除 transform 和居中样式，改为绝对定位
+                modal.style.transform = 'none';
+                modal.style.left = initialLeft + 'px';
+                modal.style.top = initialTop + 'px';
+                modal.style.right = 'auto';
+                modal.style.bottom = 'auto';
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                
+                modal.style.left = (initialLeft + dx) + 'px';
+                modal.style.top = (initialTop + dy) + 'px';
+            });
+            
+            document.addEventListener('mouseup', () => {
+                if (isDragging) {
+                    isDragging = false;
+                    modal.classList.remove('dragging');
+                }
+            });
+            
+            // 关闭按钮
+            closeBtn.addEventListener('click', () => tryCloseProgressWindow(windowId));
+            
+            // 最小化按钮
+            minimizeBtn.addEventListener('click', () => toggleMinimizeProgressWindow(windowId));
+        }
+
+        // 关闭单个窗口
+        function tryCloseProgressWindow(windowId) {
+            const windowData = activeWindows.get(windowId);
+            if (!windowData) return;
+            
+            let hasUploading = false;
+            for (const uploadId of windowData.uploadIds) {
                 const statusSpan = document.getElementById(`status-${uploadId}`);
                 if (statusSpan && !statusSpan.textContent.includes('已完成') && !statusSpan.textContent.includes('失败')) {
-                    count++;
+                    hasUploading = true;
+                    break;
                 }
             }
-            return count;
-        }
-
-        // 关闭进度窗口（带确认）
-        function tryCloseProgressModal() {
-            if (hasUploadingFiles()) {
-                const uploadingCount = getUploadingCount();
-                if (confirm(`有 ${uploadingCount} 个文件正在上传，关闭将终止上传。确定要终止上传吗？`)) {
-                    hideUploadProgressModal();
+            
+            if (hasUploading) {
+                if (confirm(`有文件正在上传，关闭将终止上传。确定要终止上传吗？`)) {
+                    removeProgressWindow(windowId);
                 }
             } else {
-                hideUploadProgressModal();
+                removeProgressWindow(windowId);
             }
         }
 
-        // 最小化/恢复进度窗口
-        let isMinimized = false;
-        function toggleMinimizeProgressModal() {
-            const modal = document.getElementById('uploadProgressModal');
-            const minimizeBtn = document.getElementById('minimizeProgressBtn');
-            isMinimized = !isMinimized;
+        // 移除进度窗口
+        function removeProgressWindow(windowId) {
+            const windowData = activeWindows.get(windowId);
+            if (!windowData) return;
             
-            if (isMinimized) {
+            windowData.modal.remove();
+            activeWindows.delete(windowId);
+        }
+
+        // 重新计算所有最小化窗口的位置
+        function recalculateMinimizedWindowPositions() {
+            // 获取所有最小化的窗口
+            const minimizedWindows = [];
+            for (const [wid, wData] of activeWindows.entries()) {
+                if (wData.isMinimized) {
+                    minimizedWindows.push({ windowId: wid, modal: wData.modal });
+                }
+            }
+            
+            // 按 windowId 排序，确保顺序一致
+            minimizedWindows.sort((a, b) => a.windowId - b.windowId);
+            
+            // 重新设置位置
+            minimizedWindows.forEach((item, index) => {
+                const offset = index * 10;
+                const modal = item.modal;
+                modal.style.right = (20 + offset) + 'px';
+                modal.style.bottom = (20 + offset) + 'px';
+                modal.style.left = 'auto';
+                modal.style.top = 'auto';
+                modal.style.transform = 'none';
+            });
+        }
+        
+        // 最小化/恢复单个窗口
+        function toggleMinimizeProgressWindow(windowId) {
+            const windowData = activeWindows.get(windowId);
+            if (!windowData) return;
+            
+            const modal = windowData.modal;
+            const minimizeBtn = document.getElementById(`minimizeProgressBtn-${windowId}`);
+            windowData.isMinimized = !windowData.isMinimized;
+            
+            if (windowData.isMinimized) {
                 modal.classList.add('minimized');
                 minimizeBtn.textContent = '□';
                 minimizeBtn.title = '恢复';
-                updateMinimizedTitle();
+                
+                // 重新计算所有最小化窗口的位置
+                recalculateMinimizedWindowPositions();
+                
+                updateMinimizedTitle(windowId);
             } else {
                 modal.classList.remove('minimized');
                 minimizeBtn.textContent = '−';
                 minimizeBtn.title = '最小化';
+                
+                // 恢复时重新计算所有正常窗口的位置
+                modal.style.right = 'auto';
+                modal.style.bottom = 'auto';
+                
+                // 检查是否有其他窗口在中间位置
+                let hasWindowInCenter = false;
+                for (const [wid, wData] of activeWindows.entries()) {
+                    if (!wData.isMinimized && wid !== windowId) {
+                        // 检查是否在中心位置（没有被拖动过）
+                        if (!wData.modal.dataset.hasBeenDragged || wData.modal.dataset.hasBeenDragged === 'false') {
+                            hasWindowInCenter = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!hasWindowInCenter) {
+                    // 没有窗口在中间，恢复到中间位置
+                    modal.style.top = '50%';
+                    modal.style.left = '50%';
+                    modal.style.transform = 'translate(-50%, -50%)';
+                    modal.dataset.hasBeenDragged = 'false';
+                } else {
+                    // 有其他窗口在中间，重新计算所有窗口位置
+                    recalculateWindowPositions();
+                }
             }
         }
 
         // 更新最小化时的标题
-        function updateMinimizedTitle() {
-            const minimizedTitle = document.getElementById('minimizedTitle');
+        function updateMinimizedTitle(windowId) {
+            const windowData = activeWindows.get(windowId);
+            if (!windowData) return;
+            
+            const minimizedTitle = document.getElementById(`minimizedTitle-${windowId}`);
             let uploadingCount = 0;
-            for (const [uploadId, uploadInfo] of uploadProgressMap.entries()) {
+            for (const uploadId of windowData.uploadIds) {
                 const statusSpan = document.getElementById(`status-${uploadId}`);
                 if (statusSpan && !statusSpan.textContent.includes('已完成') && !statusSpan.textContent.includes('失败')) {
                     uploadingCount++;
@@ -1019,16 +1213,12 @@
             }
         }
 
-        // 清空上传进度列表
-        function clearUploadProgressList() {
-            const progressList = document.getElementById('uploadProgressList');
-            progressList.innerHTML = '';
-            uploadProgressMap.clear();
-        }
-
-        // 添加上传进度项到列表
-        function addUploadProgressItem(uploadId, fileName, fileSize) {
-            const progressList = document.getElementById('uploadProgressList');
+        // 添加上传进度项到指定窗口的列表
+        function addUploadProgressItem(windowId, uploadId, fileName, fileSize) {
+            const windowData = activeWindows.get(windowId);
+            if (!windowData) return;
+            
+            const progressList = document.getElementById(`uploadProgressList-${windowId}`);
             const itemDiv = document.createElement('div');
             itemDiv.className = 'upload-progress-item';
             itemDiv.id = `upload-item-${uploadId}`;
@@ -1048,6 +1238,8 @@
             progressList.appendChild(itemDiv);
             // 滚动到最新项
             progressList.scrollTop = progressList.scrollHeight;
+            
+            windowData.uploadIds.add(uploadId);
         }
 
         // 更新上传进度
@@ -1083,9 +1275,13 @@
             if (itemDiv) {
                 itemDiv.classList.add('complete');
             }
-            // 如果是最小化状态，更新标题
-            if (isMinimized) {
-                updateMinimizedTitle();
+            
+            // 查找所属窗口并更新标题
+            for (const [windowId, windowData] of activeWindows.entries()) {
+                if (windowData.uploadIds.has(uploadId) && windowData.isMinimized) {
+                    updateMinimizedTitle(windowId);
+                    break;
+                }
             }
         }
 
@@ -1105,16 +1301,9 @@
         // 获取上传按钮和文件输入元素
         const uploadButton = document.getElementById('uploadButton');
         const fileInput = document.getElementById('fileInput');
-        const closeProgressBtn = document.getElementById('closeProgressBtn');
-
-        // 关闭进度窗口（带确认）
-        closeProgressBtn.addEventListener('click', tryCloseProgressModal);
-
-        // 最小化按钮事件
-        document.getElementById('minimizeProgressBtn').addEventListener('click', toggleMinimizeProgressModal);
 
         // 封装后的文件上传函数
-        async function uploadFileWithChunks(file, currentPath) {
+        async function uploadFileWithChunks(windowId, file, currentPath) {
             const uploadId = ++uploadIdCounter;
             const fileNameBase = file.name;
             const fileSize = file.size;
@@ -1131,9 +1320,8 @@
             };
             uploadProgressMap.set(uploadId, uploadInfo);
             
-            // 显示进度窗口并添加进度项
-            showUploadProgressModal();
-            addUploadProgressItem(uploadId, fileNameBase, fileSize);
+            // 添加到指定窗口的进度列表
+            addUploadProgressItem(windowId, uploadId, fileNameBase, fileSize);
             
             let start = 0;
             let end = CHUNK_SIZE;
@@ -1225,12 +1413,12 @@
         fileInput.addEventListener('change', (event) => {
             const files = event.target.files;
             if (files.length > 0) {
-                // 清空之前的上传进度，只显示当前批次的文件
-                clearUploadProgressList();
+                // 创建新的上传窗口
+                const windowId = createUploadProgressWindow();
                 
                 const currentPath = window.location.pathname.replace('/file', '') || '/';
                 for (let file of files) {
-                    uploadFileWithChunks(file, currentPath);
+                    uploadFileWithChunks(windowId, file, currentPath);
                 }
             }
         });
@@ -1242,6 +1430,19 @@
         });
 
         // ========== 监听浏览器刷新/关闭事件 ==========
+        // 检查是否有文件正在上传（多窗口版本）
+        function hasUploadingFiles() {
+            for (const [windowId, windowData] of activeWindows.entries()) {
+                for (const uploadId of windowData.uploadIds) {
+                    const statusSpan = document.getElementById(`status-${uploadId}`);
+                    if (statusSpan && !statusSpan.textContent.includes('已完成') && !statusSpan.textContent.includes('失败')) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        
         window.addEventListener('beforeunload', (e) => {
             if (hasUploadingFiles()) {
                 // 阻止默认行为并显示确认对话框
