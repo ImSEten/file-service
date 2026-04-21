@@ -3,7 +3,7 @@ use std::process::exit;
 use actix_web::{web, App, HttpServer};
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Router,
 };
 use clap::{CommandFactory, Parser};
@@ -82,6 +82,10 @@ impl ServerInterface<HttpAxumRequest, HttpAxumResponse> for FileServer {
             .route(
                 "/delete/{*directory}",
                 delete(http_service::file_server::delete_file_axum),
+            )
+            .route(
+                "/rename/{*directory}",
+                put(http_service::file_server::rename_file_axum),
             )
             .fallback(http_service::file_server::not_found_axum)
             .with_state(state); // Add state to the router

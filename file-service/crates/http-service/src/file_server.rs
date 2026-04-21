@@ -1,7 +1,7 @@
 use actix_web::{web, HttpResponse, Responder};
 use axum::{
     self,
-    extract::{Multipart, Path, State},
+    extract::{Multipart, Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     Json,
@@ -299,6 +299,55 @@ pub async fn delete_file_axum(
             Ok(_) => Ok(Json("delete finished")),
             Err(e) => Err((StatusCode::NOT_FOUND, e.to_string())),
         }
+    }
+}
+
+// rename file or directory
+pub async fn rename_file_axum(
+    State(state): State<AppState>,
+    Path(mut path): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let new_name = params.get("new_name")
+        .ok_or((StatusCode::BAD_REQUEST, "Missing new_name parameter".to_string()))?;
+    
+    log::debug!(
+        "rename request for path = {:?} with new_name = {:?} and root_dir = {:?}",
+        path,
+        new_name,
+        state.root_dir
+    );
+    if !path.starts_with("/") {
+        path = format!("/{}", path);
+    }
+    // FIX: Remove all leading slashes from path before joining to avoid absolute path issues
+    let path_trimmed = path.trim_start_matches('/');
+    let full_path = std::path::Path::new(&state.root_dir).join(path_trimmed);
+    log::debug!("full path for rename: {:?}", full_path);
+
+    if !full_path.exists() {
+        return Err((StatusCode::NOT_FOUND, "path not exist".to_string()));
+    }
+
+    // Validate new_name to prevent path traversal attacks
+    if new_name.contains('/') || new_name.contains('\\') || new_name == ".." {
+        return Err((StatusCode::BAD_REQUEST, "Invalid new name".to_string()));
+    }
+
+    let parent = common::file::get_file_parent(&full_path).map_err(|e| {
+        log::error!("get_file_parent {:?} error: {}", &full_path, e);
+        (StatusCode::NOT_FOUND, e.to_string())
+    })?;
+    let new_path = std::path::PathBuf::from(parent).join(&new_name);
+    
+    // Check if new path already exists
+    if new_path.exists() {
+        return Err((StatusCode::CONFLICT, "A file or directory with the new name already exists".to_string()));
+    }
+
+    match tokio::fs::rename(&full_path, &new_path).await {
+        Ok(_) => Ok(Json("rename finished")),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
 

@@ -114,6 +114,41 @@
             background-color: #0056b3;
         }
 
+        .refresh-btn, .new-folder-btn, .rename-btn {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .refresh-btn {
+            background-color: #17a2b8;
+            color: #fff;
+        }
+
+        .refresh-btn:hover {
+            background-color: #138496;
+        }
+
+        .new-folder-btn {
+            background-color: #6f42c1;
+            color: #fff;
+        }
+
+        .new-folder-btn:hover {
+            background-color: #5a32a3;
+        }
+
+        .rename-btn {
+            background-color: #ffc107;
+            color: #212529;
+        }
+
+        .rename-btn:hover {
+            background-color: #e0a800;
+        }
+
         .upload-container {
             margin-bottom: 20px;
             display: flex;
@@ -376,6 +411,93 @@
             text-align: center;
             width: 40px;
         }
+
+        /* 新建文件夹模态框样式 */
+        .modal-dialog {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+            z-index: 1001;
+            min-width: 300px;
+            max-width: 400px;
+        }
+
+        .modal-dialog-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background-color: #2b4057;
+            color: #fff;
+            border-radius: 10px 10px 0 0;
+        }
+
+        .modal-dialog-header h3 {
+            margin: 0;
+            font-size: 16px;
+        }
+
+        .modal-dialog-close {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .modal-dialog-body {
+            padding: 20px;
+        }
+
+        .modal-dialog-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            padding: 15px 20px;
+            border-top: 1px solid #eee;
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        .modal-btn-cancel {
+            padding: 8px 16px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .modal-btn-cancel:hover {
+            background-color: #5a6268;
+        }
+
+        .modal-btn-confirm {
+            padding: 8px 16px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .modal-btn-confirm:hover {
+            background-color: #218838;
+        }
     </style>
 </head>
 <body>
@@ -383,9 +505,43 @@
     <div class="upload-container">
         <input type="file" id="fileInput" multiple style="display:none;" />
         <button class="btn btn-primary" id="uploadButton">上传文件</button>
+        <button class="refresh-btn" id="refreshButton">刷新列表</button>
+        <button class="new-folder-btn" id="newFolderButton">新建文件夹</button>
         <div class="batch-operations">
             <button class="batch-btn" id="batchDownloadBtn" disabled>批量下载</button>
             <button class="batch-btn" id="batchDeleteBtn" disabled>批量删除</button>
+        </div>
+    </div>
+
+    <!-- 新建文件夹模态框 -->
+    <div class="modal-overlay" id="newFolderOverlay"></div>
+    <div class="modal-dialog" id="newFolderDialog">
+        <div class="modal-dialog-header">
+            <h3>新建文件夹</h3>
+            <button class="modal-dialog-close" id="closeNewFolderBtn">×</button>
+        </div>
+        <div class="modal-dialog-body">
+            <input type="text" class="modal-input" id="newFolderName" placeholder="请输入文件夹名称" />
+        </div>
+        <div class="modal-dialog-footer">
+            <button class="modal-btn-cancel" id="cancelNewFolderBtn">取消</button>
+            <button class="modal-btn-confirm" id="confirmNewFolderBtn">确定</button>
+        </div>
+    </div>
+
+    <!-- 重命名模态框 -->
+    <div class="modal-overlay" id="renameOverlay"></div>
+    <div class="modal-dialog" id="renameDialog">
+        <div class="modal-dialog-header">
+            <h3>重命名</h3>
+            <button class="modal-dialog-close" id="closeRenameBtn">×</button>
+        </div>
+        <div class="modal-dialog-body">
+            <input type="text" class="modal-input" id="renameInput" placeholder="请输入新名称" />
+        </div>
+        <div class="modal-dialog-footer">
+            <button class="modal-btn-cancel" id="cancelRenameBtn">取消</button>
+            <button class="modal-btn-confirm" id="confirmRenameBtn">确定</button>
         </div>
     </div>
 
@@ -604,6 +760,13 @@
                     downloadButton.addEventListener('click', (event) => downloadFile(item.path));
                     actionTd.appendChild(downloadButton);
                 }
+
+                // 重命名按钮
+                const renameButton = document.createElement('button');
+                renameButton.textContent = "重命名";
+                renameButton.className = "rename-btn";
+                renameButton.addEventListener('click', () => showRenameDialog(item.path, item.is_dir));
+                actionTd.appendChild(renameButton);
 
                 // 删除按钮
                 const deleteButton = document.createElement('button');
@@ -1069,6 +1232,153 @@
                 for (let file of files) {
                     uploadFileWithChunks(file, currentPath);
                 }
+            }
+        });
+
+        // ========== 刷新列表功能 ==========
+        document.getElementById('refreshButton').addEventListener('click', () => {
+            const currentPath = window.location.pathname.replace('/file', '') || '/';
+            fetchAndDisplayDirectory(currentPath);
+        });
+
+        // ========== 新建文件夹功能 ==========
+        let newFolderOverlay = document.getElementById('newFolderOverlay');
+        let newFolderDialog = document.getElementById('newFolderDialog');
+        let closeNewFolderBtn = document.getElementById('closeNewFolderBtn');
+        let cancelNewFolderBtn = document.getElementById('cancelNewFolderBtn');
+        let confirmNewFolderBtn = document.getElementById('confirmNewFolderBtn');
+        let newFolderNameInput = document.getElementById('newFolderName');
+
+        document.getElementById('newFolderButton').addEventListener('click', () => {
+            newFolderNameInput.value = '';
+            newFolderOverlay.style.display = 'block';
+            newFolderDialog.style.display = 'block';
+            newFolderNameInput.focus();
+        });
+
+        function closeNewFolderDialog() {
+            newFolderOverlay.style.display = 'none';
+            newFolderDialog.style.display = 'none';
+        }
+
+        closeNewFolderBtn.addEventListener('click', closeNewFolderDialog);
+        cancelNewFolderBtn.addEventListener('click', closeNewFolderDialog);
+
+        confirmNewFolderBtn.addEventListener('click', async () => {
+            const folderName = newFolderNameInput.value.trim();
+            if (!folderName) {
+                alert('请输入文件夹名称');
+                return;
+            }
+
+            // 验证文件夹名称是否合法
+            if (folderName.includes('/') || folderName.includes('\\') || folderName === '..') {
+                alert('文件夹名称包含非法字符');
+                return;
+            }
+
+            const currentPath = window.location.pathname.replace('/file', '') || '/';
+            const fullPath = currentPath === '/' ? `/${folderName}` : `${currentPath}/${folderName}`;
+            
+            try {
+                const response = await fetch(`${window.location.origin}/upload${fullPath}`, {
+                    method: 'POST',
+                    body: new FormData(),
+                });
+
+                if (response.ok) {
+                    alert('文件夹创建成功！');
+                    closeNewFolderDialog();
+                    fetchAndDisplayDirectory(currentPath);
+                } else {
+                    const errorMessage = await response.text();
+                    alert(`创建失败：${errorMessage}`);
+                }
+            } catch (error) {
+                console.error('创建文件夹过程中发生错误:', error);
+                alert('创建文件夹过程中发生错误，请检查控制台日志。');
+            }
+        });
+
+        // 按回车键确认创建文件夹
+        newFolderNameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                confirmNewFolderBtn.click();
+            }
+        });
+
+        // ========== 重命名功能 ==========
+        let renameOverlay = document.getElementById('renameOverlay');
+        let renameDialog = document.getElementById('renameDialog');
+        let closeRenameBtn = document.getElementById('closeRenameBtn');
+        let cancelRenameBtn = document.getElementById('cancelRenameBtn');
+        let confirmRenameBtn = document.getElementById('confirmRenameBtn');
+        let renameInput = document.getElementById('renameInput');
+        let currentRenamePath = null;
+
+        function showRenameDialog(path, isDir) {
+            currentRenamePath = path;
+            // 从路径中提取文件名/文件夹名
+            const parts = path.split('/').filter(p => p);
+            const name = parts[parts.length - 1] || path;
+            renameInput.value = name;
+            renameOverlay.style.display = 'block';
+            renameDialog.style.display = 'block';
+            renameInput.focus();
+            renameInput.select();
+        }
+
+        function closeRenameDialog() {
+            renameOverlay.style.display = 'none';
+            renameDialog.style.display = 'none';
+            currentRenamePath = null;
+        }
+
+        closeRenameBtn.addEventListener('click', closeRenameDialog);
+        cancelRenameBtn.addEventListener('click', closeRenameDialog);
+
+        confirmRenameBtn.addEventListener('click', async () => {
+            const newName = renameInput.value.trim();
+            if (!newName) {
+                alert('请输入新名称');
+                return;
+            }
+
+            // 验证新名称是否合法
+            if (newName.includes('/') || newName.includes('\\') || newName === '..') {
+                alert('名称包含非法字符');
+                return;
+            }
+
+            if (!currentRenamePath) {
+                alert('无效的操作');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${window.location.origin}/rename${currentRenamePath}?new_name=${encodeURIComponent(newName)}`, {
+                    method: 'PUT',
+                });
+
+                if (response.ok) {
+                    alert('重命名成功！');
+                    closeRenameDialog();
+                    const currentPath = window.location.pathname.replace('/file', '') || '/';
+                    fetchAndDisplayDirectory(currentPath);
+                } else {
+                    const errorMessage = await response.text();
+                    alert(`重命名失败：${errorMessage}`);
+                }
+            } catch (error) {
+                console.error('重命名过程中发生错误:', error);
+                alert('重命名过程中发生错误，请检查控制台日志。');
+            }
+        });
+
+        // 按回车键确认重命名
+        renameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                confirmRenameBtn.click();
             }
         });
     </script>
