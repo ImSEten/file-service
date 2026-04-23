@@ -1,7 +1,7 @@
 use std::{env, fs, path::PathBuf};
 
 fn main() {
-    tonic_build::configure();
+    tonic_prost_build::configure();
     // file-service
     let file_protos = vec!["protos/file/file.proto"];
     gen_protos("proto-file-service", file_protos);
@@ -15,7 +15,7 @@ fn gen_protos(name: &str, inputs: Vec<&str>) {
             out_dir.to_str().unwrap_or_default()
         )
     });
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .out_dir(out_dir)
         .build_server(true)
         .build_client(true)

@@ -6,8 +6,9 @@ edition.workspace = true
 [dependencies]
 tonic.workspace = true
 prost.workspace = true
+tonic-prost.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 
 [build-dependencies]
-tonic-build = "0.13"
+tonic-prost-build.workspace = true
