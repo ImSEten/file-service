@@ -308,9 +308,11 @@ pub async fn rename_file_axum(
     Path(mut path): Path<String>,
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let new_name = params.get("new_name")
-        .ok_or((StatusCode::BAD_REQUEST, "Missing new_name parameter".to_string()))?;
-    
+    let new_name = params.get("new_name").ok_or((
+        StatusCode::BAD_REQUEST,
+        "Missing new_name parameter".to_string(),
+    ))?;
+
     log::debug!(
         "rename request for path = {:?} with new_name = {:?} and root_dir = {:?}",
         path,
@@ -339,10 +341,13 @@ pub async fn rename_file_axum(
         (StatusCode::NOT_FOUND, e.to_string())
     })?;
     let new_path = std::path::PathBuf::from(parent).join(new_name);
-    
+
     // Check if new path already exists
     if new_path.exists() {
-        return Err((StatusCode::CONFLICT, "A file or directory with the new name already exists".to_string()));
+        return Err((
+            StatusCode::CONFLICT,
+            "A file or directory with the new name already exists".to_string(),
+        ));
     }
 
     match tokio::fs::rename(&full_path, &new_path).await {

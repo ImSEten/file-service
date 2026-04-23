@@ -109,11 +109,7 @@ impl GrpcFile for FileServer {
             .read(true)
             .open(file.clone())
             .await?;
-        let mode = f
-            .metadata()
-            .await
-            .map_err(std::io::Error::other)?
-            .mode();
+        let mode = f.metadata().await.map_err(std::io::Error::other)?.mode();
 
         let (sender, receiver) =
             tokio::sync::mpsc::channel::<Result<DownloadFileResponse, Status>>(2);

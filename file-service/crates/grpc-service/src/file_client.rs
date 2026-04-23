@@ -42,11 +42,7 @@ impl GRPCClient {
             .open(local_file)
             .await?;
 
-        let mode = f
-            .metadata()
-            .await
-            .map_err(std::io::Error::other)?
-            .mode();
+        let mode = f.metadata().await.map_err(std::io::Error::other)?.mode();
         let (sender, receiver) = tokio::sync::mpsc::channel::<UploadFileRequest>(1);
         let handle = tokio::spawn(async move {
             loop {
@@ -61,11 +57,7 @@ impl GRPCClient {
                         break; //EOF
                     }
 
-                    match sender
-                        .send(request)
-                        .await
-                        .map_err(std::io::Error::other)
-                    {
+                    match sender.send(request).await.map_err(std::io::Error::other) {
                         Ok(_) => {}
                         Err(e) => return Err(e),
                     }
