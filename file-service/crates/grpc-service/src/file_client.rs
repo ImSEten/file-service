@@ -45,7 +45,7 @@ impl GRPCClient {
         let mode = f
             .metadata()
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+            .map_err(std::io::Error::other)?
             .mode();
         let (sender, receiver) = tokio::sync::mpsc::channel::<UploadFileRequest>(1);
         let handle = tokio::spawn(async move {
@@ -64,7 +64,7 @@ impl GRPCClient {
                     match sender
                         .send(request)
                         .await
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+                        .map_err(std::io::Error::other)
                     {
                         Ok(_) => {}
                         Err(e) => return Err(e),
@@ -138,7 +138,7 @@ impl GRPCClient {
                         write_times += 1;
                         // Reduce the number of flushes and protect disks.
                         // Here the disk is written every 100 MB.
-                        if write_times % 100 == 0 {
+                        if write_times.is_multiple_of(100) {
                             f.flush().await?;
                         }
                         if len == 0 {

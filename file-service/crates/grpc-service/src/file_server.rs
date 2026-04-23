@@ -81,7 +81,7 @@ impl GrpcFile for FileServer {
             write_times += 1;
             // Reduce the number of flushes and protect disks.
             // Here the disk is written every 100 MB.
-            if write_times % common::file::FLUSH_TIME as u32 == 0 {
+            if write_times.is_multiple_of(common::file::FLUSH_TIME as u32) {
                 f.flush().await?;
             }
             if len == 0 {
@@ -112,7 +112,7 @@ impl GrpcFile for FileServer {
         let mode = f
             .metadata()
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+            .map_err(std::io::Error::other)?
             .mode();
 
         let (sender, receiver) =
@@ -135,7 +135,7 @@ impl GrpcFile for FileServer {
                         match sender
                             .send(Ok(response))
                             .await
-                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+                            .map_err(std::io::Error::other)
                         {
                             Ok(_) => {}
                             Err(e) => {

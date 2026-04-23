@@ -161,7 +161,7 @@ pub async fn download_file_axum(
     let _mode = f
         .metadata()
         .await
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        .map_err(std::io::Error::other)
         .unwrap()
         .mode();
 
@@ -338,7 +338,7 @@ pub async fn rename_file_axum(
         log::error!("get_file_parent {:?} error: {}", &full_path, e);
         (StatusCode::NOT_FOUND, e.to_string())
     })?;
-    let new_path = std::path::PathBuf::from(parent).join(&new_name);
+    let new_path = std::path::PathBuf::from(parent).join(new_name);
     
     // Check if new path already exists
     if new_path.exists() {

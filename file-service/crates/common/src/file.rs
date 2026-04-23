@@ -101,7 +101,7 @@ pub async fn read_file_content(
                 match sender
                     .send(Ok(content))
                     .await
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+                    .map_err(std::io::Error::other)
                 {
                     Ok(_) => {}
                     Err(e) => {
