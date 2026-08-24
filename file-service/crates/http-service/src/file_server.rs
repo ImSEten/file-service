@@ -105,17 +105,34 @@ pub async fn list_axum(
     log::debug!("full path for listing: {:?}", full_path);
 
     let mut file_list = Vec::<FileInfo>::new();
-    if !full_path.exists() || !full_path.is_dir() {
+    if !full_path.exists() {
+        log::error!("{:?} path not exist", full_path);
+        return Err((StatusCode::NOT_FOUND, "path not exist".to_string()));
+    }
+    if !full_path.is_dir() {
+        log::error!("{:?} is not dir", full_path);
         return Err((StatusCode::NOT_FOUND, "path not exist".to_string()));
     }
 
     let mut read_dir = tokio::fs::read_dir(&full_path)
         .await
-        .map_err(|e| (StatusCode::OK, e.to_string()))?;
+        .map_err(|e| {
+            log::error!("read_dir return error: {:?}", e);
+            match e.kind() {
+            std::io::ErrorKind::NotFound => (StatusCode::NOT_FOUND, e.to_string()),
+            _ => (StatusCode::SERVICE_UNAVAILABLE, e.to_string()),
+        }
+        })?;
     while let Some(entry) = read_dir
         .next_entry()
         .await
-        .map_err(|e| (StatusCode::OK, e.to_string()))?
+        .map_err(|e| {
+            log::error!("read_dir.next_entry return error: {:?}", e);
+            match e.kind() {
+            std::io::ErrorKind::NotFound => (StatusCode::NOT_FOUND, e.to_string()),
+            _ => (StatusCode::SERVICE_UNAVAILABLE, e.to_string()),
+        }
+        })?
     {
         let path = entry.path();
         let mut file_info = FileInfo::new(&path)
@@ -151,18 +168,30 @@ pub async fn download_file_axum(
     log::debug!("full path for download: {:?}", full_path);
 
     if full_path.is_dir() {
-        return Err((StatusCode::OK, "file if dir, cannot download".to_string()));
+        log::error!("file {:?} is dir, cannot download", full_path);
+        return Err((StatusCode::NOT_FOUND, "file if dir, cannot download".to_string()));
     }
     let f = tokio::fs::OpenOptions::new()
         .read(true)
         .open(&full_path)
         .await
-        .unwrap();
+        .map_err(|e| {
+            log::error!("read file {:?} return error: {:?}", full_path, e);
+            match e.kind() {
+            std::io::ErrorKind::NotFound => (StatusCode::NOT_FOUND, e.to_string()),
+            _ => (StatusCode::SERVICE_UNAVAILABLE, e.to_string()),
+        }
+    })?;
     let _mode = f
         .metadata()
         .await
         .map_err(std::io::Error::other)
-        .unwrap()
+        .map_err(|e| {
+            log::error!("read file {:?} metadata return error: {:?}", full_path, e);
+            match e.kind() {
+            std::io::ErrorKind::NotFound => (StatusCode::NOT_FOUND, e.to_string()),
+            _ => (StatusCode::SERVICE_UNAVAILABLE, e.to_string()),
+        }})?
         .mode();
 
     let name = full_path
@@ -172,7 +201,12 @@ pub async fn download_file_axum(
     let content_disposition = format!("attachment; filename=\"{}\"", name);
     let receiver = common::file::read_file_content(full_path.to_string_lossy().to_string())
         .await
-        .unwrap();
+        .map_err(|e| {
+            log::error!("read file {:?} metadata return error: {:?}", full_path, e);
+            match e.kind() {
+            std::io::ErrorKind::NotFound => (StatusCode::NOT_FOUND, e.to_string()),
+            _ => (StatusCode::METHOD_NOT_ALLOWED, e.to_string()),
+        }})?;
     let stream = tokio_stream::wrappers::ReceiverStream::new(receiver);
     match axum::response::Response::builder()
         .status(StatusCode::OK)
@@ -286,18 +320,25 @@ pub async fn delete_file_axum(
     log::debug!("full path for delete: {:?}", full_path);
 
     if !full_path.exists() {
+        log::error!("path {:?} not exist, cannot delete", full_path);
         return Err((StatusCode::NOT_FOUND, "path not exist".to_string()));
     }
 
     if full_path.is_dir() {
-        match tokio::fs::remove_dir_all(full_path).await {
+        match tokio::fs::remove_dir_all(full_path.clone()).await {
             Ok(_) => Ok(Json("delete finished")),
-            Err(e) => Err((StatusCode::NOT_FOUND, e.to_string())),
+            Err(e) => {
+                log::error!("delete path {:?} failed: {:?}", full_path, e);
+                Err((StatusCode::METHOD_NOT_ALLOWED, e.to_string()))
+            }
         }
     } else {
-        match tokio::fs::remove_file(full_path).await {
+        match tokio::fs::remove_file(full_path.clone()).await {
             Ok(_) => Ok(Json("delete finished")),
-            Err(e) => Err((StatusCode::NOT_FOUND, e.to_string())),
+            Err(e) => {
+                log::error!("delete file {:?} failed: {:?}", full_path, e);
+                Err((StatusCode::METHOD_NOT_ALLOWED, e.to_string()))
+            }
         }
     }
 }
@@ -328,11 +369,13 @@ pub async fn rename_file_axum(
     log::debug!("full path for rename: {:?}", full_path);
 
     if !full_path.exists() {
+        log::error!("path {:?} not exist, cannot rename", full_path);
         return Err((StatusCode::NOT_FOUND, "path not exist".to_string()));
     }
 
     // Validate new_name to prevent path traversal attacks
     if new_name.contains('/') || new_name.contains('\\') || new_name == ".." {
+        log::error!("path {:?} contains '/' or '\\' or '..', cannot rename", full_path);
         return Err((StatusCode::BAD_REQUEST, "Invalid new name".to_string()));
     }
 
@@ -344,6 +387,7 @@ pub async fn rename_file_axum(
 
     // Check if new path already exists
     if new_path.exists() {
+        log::error!("rename error: new_path {:?} exists", &full_path);
         return Err((
             StatusCode::CONFLICT,
             "A file or directory with the new name already exists".to_string(),
@@ -352,7 +396,10 @@ pub async fn rename_file_axum(
 
     match tokio::fs::rename(&full_path, &new_path).await {
         Ok(_) => Ok(Json("rename finished")),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+        Err(e) => {
+            log::error!("rename {:?} to {:?} return error: {}", &full_path, &new_path, e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        }
     }
 }
 

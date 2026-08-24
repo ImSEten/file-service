@@ -82,14 +82,13 @@ pub async fn read_file_content(
     if file.is_dir() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::IsADirectory,
-            "file if dir, cannot download",
+            "file if dir, cannot read",
         ));
     }
     let mut f = tokio::fs::OpenOptions::new()
         .read(true)
         .open(file)
-        .await
-        .unwrap();
+        .await?;
     let (sender, receiver) = tokio::sync::mpsc::channel::<Result<Vec<u8>, std::io::Error>>(2);
     tokio::spawn(async move {
         loop {
